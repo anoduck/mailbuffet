@@ -21,8 +21,7 @@
 # ----------------------------------------------
 # This script was inspired by and parts of the code was borrowed from
 # an effort to understand how to use the python program formbox written
-# by Nguyá»n Gia Phong. Unfortunately, it's mysteries are still
-# locked in the mind of it's developer.
+# by Nguyá»n Gia Phong.
 # ---------------------------------------------
 
 from simple_parsing import parse
