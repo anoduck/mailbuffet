@@ -6,7 +6,7 @@
   </a>
 </p>
 
-> A crude, but effective, means to process Google's Takeout mbox archive into individual thread oriented messages as html.
+> A crude, but effective, means to process Google's Takeout mbox archive into individual thread oriented messages as text.
 
 ## Install
 
