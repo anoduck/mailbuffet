@@ -1,0 +1,19 @@
+[tool.poetry]
+name = "mailbuffet"
+version = "0.1.0"
+description = "Generate markdown files from mbox archives"
+authors = ["anoduck <11767-anoduck@users.noreply.gitgud.io>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+simple-parsing = "^0.1.5"
+mailbox = "^0.4"
+mistune = "^3.0.2"
+nh3 = "^0.2.18"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
