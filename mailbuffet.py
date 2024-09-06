@@ -24,13 +24,15 @@
 # by Nguyá»n Gia Phong.
 # ---------------------------------------------
 
-import simple_parsing
+from simple_parsing import parse
 from dataclasses import dataclass
 from operator import itemgetter, contains
+from collections import defaultdict
 from mailbox import mbox
 from email.header import decode_header
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlencode
+import hashlib
 from py_markdown_table.markdown_table import markdown_table
 import os
 
@@ -60,7 +62,7 @@ class Options:
     webpath: str = '/Documents/emails'  # Relative Webpath from site root
 
 
-Options = simple_parsing.parse(Options, dest='Options')
+Options = parse(Options, dest='Options')
 
 
 # ### Return Mbox object with initializer
@@ -76,9 +78,12 @@ def write_table(table, filepath):
     mdtbl = markdown_table(table).set_params(row_sep='markdown', quote=False).get_markdown()
     with open(filepath, 'w', encoding='utf-8') as wt:
         title = "## Email Table of Contents"
+        wt.write('\n')
         wt.write(title)
         wt.write('\n')
+        wt.write('\n')
         wt.write(mdtbl)
+        wt.write('\n')
         wt.write('\n')
         wt.write('----')
         wt.write('\n')
@@ -90,37 +95,27 @@ def write_table(table, filepath):
 
 
 def generate_index(msg_list, outdir, webpath):
-    filename = 'email-index.md'
+    filename = 'index.md'
     filepath = os.path.join(outdir, filename)
     table = []
-    for thread in msg_list:
-        if thread.get('gotkids'):
-            parent = thread.get('parent')
-            unsorted_children = thread.get('children')
-            children = sorted(unsorted_children, key=itemgetter('date'), reverse=True)
-            child_ids = [getmid(i) for i in children]
-            fname = get_name(parent)
-            fpath = webpath + '/' + filename
-            flink = str(f'[{fname}]({fpath})')
-            parent_subject = parent.get('Subject')
-            parent_date = get_date(parent)
-            tbl_row = {"Subject": parent_subject,
-                       "Date": parent_date,
-                       "Path": flink,
-                       "Replies": child_ids}
-            table.append(tbl_row)
+    for msg in msg_list:
+        if isreply(msg):
+            replyto = get_replylink(msg, webpath)
         else:
-            omsg = thread.get('parent')
-            oname = get_name(omsg)
-            opath = webpath + '/' + oname
-            olink = str(f'[{oname}]({opath})')
-            osubj = omsg.get('Subject')
-            odate = get_date(omsg)
-            tbl_row = {"Subject": osubj,
-                       "Date": odate,
-                       "Path": olink,
-                       "Replies": "N/A"}
-            table.append(tbl_row)
+            replyto = None
+        if hasrefs(msg):
+            refs = get_reflinks(msg, webpath)
+        else:
+            refs = None
+        flink = get_selflink(msg, webpath)
+        parent_subject = get_subject(msg)
+        parent_date = get_date(msg)
+        tbl_row = {"Subject": parent_subject,
+                    "Date": parent_date,
+                    "Path": flink,
+                    "Reply-to": replyto,
+                    "Refs": refs}
+        table.append(tbl_row)
     write_table(table, filepath)
 
 
@@ -205,37 +200,57 @@ def redact(content, priv):
     return content
 
 
+def hasrefs(message):
+    refs = message.get('References')
+    if refs:
+        return True
+    else:
+        return False
+
+
 # #### format message to markdown string
 
 # In[44]:
 
 
-def parse_message(msg, priv, msgtype, child_ids=None):
+def parse_message(msg, priv, webpath):
     body = get_body(msg)
     if body is None:
-       return
+        return
+    if isreply(msg):
+        replyto = get_replylink(msg, webpath)
+    else:
+        replyto = None
+    if hasrefs(msg):
+        refs = get_reflinks(msg, webpath)
+    else:
+        refs = None
     content = str(f'''
+\n
 ---
-title: {msg.get('Subject')}
+title: {get_subject(msg)}
 author: {get_author(msg)}
-subject: {msg.get('subject')}
-message-id: {msg['Message-ID']}
+subject: {get_subject(msg)}
+message-id: {getmid(msg)}
 date: {get_date(msg)}
+---
 \n
-## {msg.get('subject')}
 \n
-{body}
+## {get_subject(msg)}
+\n
+{get_body(msg)}
+\n
+\n
+### References
+\n
+{refs}
+\n
+\n
+### Reply-To
+\n
+{replyto}
 \n
                   ''')
-    if msgtype == 'parent':
-        child_str = str(f'''
-----
-### Child Parameters
-\n
-mailto_params: {urlencode(dict(reply_to(msg)))}
-\n
-Children: {child_ids}''')
-        content = content + child_str
     content = redact(content, priv)
     return content
 
@@ -266,42 +281,75 @@ def get_name(message):
     return name
 
 
+def get_replyto(message):
+    super = message.get('In-Reply-To')
+    target = sanitize(super)
+    return target
+
+
+def get_subject(message):
+    subj = message.get('Subject')
+    return subj.lower()
+
+
+def get_ref(message):
+    ref_list = []
+    refs = message.get('References')
+    refs = refs.split(' ')
+    for ref in refs:
+        ref = sanitize(ref)
+        if ref != ' ' and ref != '':
+            ref_list.append(ref)
+    return ref_list
+
+
+def get_selflink(message, webpath):
+    mid = getmid(message)
+    link = webpath + '/' + mid
+    link = str(f'[{mid}]({link})')
+    return link
+
+
+def get_replylink(message, webpath):
+    id = get_replyto(message)
+    link = webpath + '/' + id
+    link = str(f'[{id}]({link})')
+    return link
+
+
+def get_reflinks(message, webpath):
+    ref_list = get_ref(message)
+    link_list = []
+    for ref in ref_list:
+        link = webpath + '/' + ref
+        link = str(f'[{ref}]({link})')
+        link_list.append(link)
+    return link_list
+
+
 # ### Secondary Process: Write Thread
 
 # In[46]:
 
 
-def write_thread(thread, outdir, priv, webpath):
-    if not os.path.isdir(outdir):
-        os.mkdir(outdir)
-    if thread.get('gotkids'):
-        parent_message = thread.get('parent')
-        unsorted_children = thread.get('children')
-        children = sorted(unsorted_children, key=itemgetter('date'), reverse=True)
-        child_ids = [getmid(i) for i in children]
-        fname = get_name(parent_message)
-        fpath = os.path.join(outdir, fname)
-        with open(fpath, 'w', encoding='utf-8', errors='xmlcharrefreplace') as of:
-            pcontent = parse_message(parent_message, priv, msgtype='parent', child_ids=child_ids)
-            of.write(pcontent)
-            of.write('\n')
-            of.write('====')
-            for child in children:
-                child_content = parse_message(child, priv, msgtype='child', child_ids=None)
-                of.write(child_content)
-                of.write('\n')
-                of.write('----')
-            of.close()
+def process_msg(msg, outdir, priv, webpath):
+    fname = get_name(msg)
+    fpath = os.path.join(outdir, fname)
+    with open(fpath, 'w', encoding='utf-8', errors='xmlcharrefreplace') as of:
+        pcontent = str(parse_message(msg, priv, webpath))
+        of.write(pcontent)
+        of.close()
+
+
+def isreply(message):
+    conreply = get_replyto(message)
+    subject = get_subject(message)
+    if conreply:
+        return True
+    elif contains(subject, 're:'):
+        return True
     else:
-        pmessage = thread.get('parent')
-        fname = get_name(pmessage)
-        fpath = os.path.join(outdir, fname)
-        with open(fpath, 'w', encoding='utf-8', errors='xmlcharrefreplace') as of:
-            ocontent = parse_message(pmessage, priv, msgtype='Orphan', child_ids=None)
-            of.write(ocontent)
-            of.write('\n')
-            of.write('====')
-            of.close()
+        return False
 
 
 # ### Primary Process: Main
@@ -311,47 +359,14 @@ def write_thread(thread, outdir, priv, webpath):
 
 def main(Options):
     outdir = Options.outdir
+    if not os.path.isdir(outdir):
+        os.mkdir(outdir)
     priv = Options.priv
     webpath = Options.webpath
     messages = get_mbox(Options.mbox)
     messages = list(messages)
-    parents = []
-    print(f'Total number of messages: {len(messages)}')
-    for message in messages:
-        subj = str(message.get('Subject')).lower()
-        repl = message['In-Reply-To']
-        mcc = message['Cc']
-        if not repl or not mcc:
-            if not contains(subj, 're:'):
-                parents.append(message)
-    for parent in parents:
-        for message in messages:
-            if parent == message:
-                messages.remove(message)
-    print(f'Processing {len(messages)} messages with {len(parents)} parents.')
-    msg_list = []
-    for parent in parents:
-        maildict = dict()
-        pID = parent.get("Message-Id")
-        reply_list = []
-        for message in messages:
-            if isinstance(message, str):
-                message = message.strip()
-            if message.get('In-Reply-To'):
-                if pID in message['In-Reply-To']:
-                    reply_list.append(message)
-        if len(reply_list) >= 1:
-            maildict['has_child'] = True
-            maildict["parent"] = parent
-            maildict["children"] = reply_list
-        else:
-            maildict['has_child'] = False
-            maildict["parent"] = parent
-            maildict["children"] = None
-        msg_list.append(maildict)
-    for thread in msg_list:
-        write_thread(thread, outdir, priv, webpath)
-    generate_index(msg_list, outdir, webpath)
+    for msg in messages:
+        process_msg(msg, outdir, priv, webpath)
     print('Done!')
 
 
