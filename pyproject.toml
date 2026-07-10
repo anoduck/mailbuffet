@@ -12,6 +12,7 @@ simple-parsing = "^0.1.5"
 mailbox = "^0.4"
 mistune = "^3.0.2"
 py-markdown-table = "^1.1.0"
+charset-normalizer = "^3.4.9"
 
 
 [build-system]
